@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Concurrency in Databases</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Fira+Code&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #6366f1; --success: #10b981; --danger: #ef4444;
+            --bg: #0f172a; --card: #1e293b; --text: #f8fafc;
+        }
+        body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 40px; }
+        .container { max-width: 900px; margin: auto; }
+        
+        /* Database Display */
+        .db-vault {
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            border: 2px solid #334155; border-radius: 16px; padding: 30px;
+            text-align: center; margin-bottom: 30px; position: relative;
+            box-shadow: 0 20px 25px -5px rgba(0,0,0,0.3);
+        }
+        .db-label { text-transform: uppercase; letter-spacing: 2px; font-size: 0.75rem; color: #94a3b8; margin-bottom: 10px; }
+        .balance-display { font-size: 3.5rem; font-weight: 800; font-family: 'Fira Code', monospace; transition: all 0.3s ease; }
+        .balance-display.glitch { color: var(--danger); animation: shake 0.5s ease-in-out infinite; }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+        }
+
+        /* Process Grid */
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .worker-card {
+            background: var(--card); border-radius: 12px; padding: 20px;
+            border: 1px solid #334155; transition: 0.3s;
+        }
+        .worker-card h3 { margin-top: 0; display: flex; align-items: center; gap: 10px; }
+        .badge { font-size: 0.7rem; padding: 2px 8px; border-radius: 10px; background: #334155; }
+        
+        .input-group { margin-bottom: 15px; }
+        label { font-size: 0.8rem; color: #94a3b8; display: block; margin-bottom: 5px; }
+        input {
+            width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #334155;
+            background: #0f172a; color: white; font-family: 'Fira Code', monospace;
+            box-sizing: border-box;
+        }
+
+        .local-mem {
+            background: #0f172a; padding: 15px; border-radius: 8px;
+            margin: 15px 0; border-left: 4px solid var(--primary);
+        }
+        .mem-val { font-family: 'Fira Code', monospace; font-size: 1.2rem; color: var(--success); }
+
+        button {
+            width: 100%; padding: 12px; margin-bottom: 8px; border-radius: 6px;
+            border: none; background: var(--primary); color: white;
+            font-weight: 600; cursor: pointer; transition: 0.2s;
+        }
+        button:hover:not(:disabled) { filter: brightness(1.2); transform: translateY(-1px); }
+        button:disabled { background: #334155; cursor: not-allowed; opacity: 0.5; }
+        
+        .terminal {
+            background: #000; border-radius: 8px; margin-top: 30px;
+            padding: 20px; font-family: 'Fira Code', monospace; font-size: 0.85rem;
+            height: 180px; overflow-y: auto; border: 1px solid #334155;
+        }
+        .log-entry { margin-bottom: 4px; border-left: 2px solid #334155; padding-left: 10px; }
+        .log-sys { color: #94a3b8; }
+        .log-err { color: var(--danger); font-weight: bold; }
+        .log-success { color: var(--success); }
+
+        .salary-theme { border-top: 4px solid var(--success); }
+        .cash-theme { border-top: 4px solid var(--primary); }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header style="margin-bottom: 40px;">
+        <h1 style="margin:0">Concurrency in Database</h1>
+        <p style="color: #94a3b8">An Interactive "Lost Update" Simulator</p>
+    </header>
+
+    <div class="db-vault">
+        <div class="db-label">Central Bank Database Balance</div>
+        <div class="balance-display" id="db-balance">£1000</div>
+    </div>
+
+    <div class="grid">
+        <div class="worker-card salary-theme">
+            <h3>Process A <span class="badge">Salary</span></h3>
+            <div class="input-group">
+                <label>Amount to Add/Subtract:</label>
+                <input type="number" id="s-input" value="100">
+            </div>
+            <div class="local-mem">
+                <div class="db-label">Worker A Local RAM</div>
+                <div class="mem-val" id="s-local">£---</div>
+            </div>
+            <button id="s-read" onclick="salaryRead()">Step 1. Read DB Balance</button>
+            <button id="s-calc" onclick="salaryCalc()" disabled>Step 3. Add (or subtract) the salary credit  </button>
+            <button id="s-write" onclick="salaryWrite()" disabled>Step 5. Overwrite DB</button>
+        </div>
+
+        <div class="worker-card cash-theme">
+            <h3>Process B <span class="badge">ATM</span></h3>
+            <div class="input-group">
+                <label>Amount to Add/Subtract:</label>
+                <input type="number" id="c-input" value="50">
+            </div>
+            <div class="local-mem">
+                <div class="db-label">Worker B Local RAM</div>
+                <div class="mem-val" id="c-local">£---</div>
+            </div>
+            <button id="c-read" onclick="cashRead()">Step2. Read DB Balance</button>
+            <button id="c-write" onclick="cashWrite()" disabled>Step 4. Add the ATM credit</button>
+        </div>
+    </div>
+
+    <div class="terminal" id="log">
+        <div class="log-entry log-sys">Simulator online. Set custom amounts and follow the steps.</div>
+    </div>
+    
+    <button onclick="location.reload()" style="margin-top:20px; background:transparent; border: 1px solid #334155; color: #94a3b8;">Reset Lab</button>
+
+    <footer>
+        <p>This interative app is built only demonstration and education purpose to elaborate the concept of Database Integrity.</p>
+        <p>No warranties or liabilities accepted. </p>
+        <p>&copy; 2026 Hazrat Ali</p>
+    </footer>
+
+</div>
+<script>
+    let dbBalance = 1000;
+    let initialBalance = 1000;
+    let sLocal = null;
+    let cLocal = null;
+    let amountA = 0;
+    let amountB = 0;
+
+    function log(msg, type = 'sys') {
+        const logDiv = document.getElementById('log');
+        const entry = document.createElement('div');
+        entry.className = `log-entry log-${type}`;
+        entry.innerHTML = `[${new Date().toLocaleTimeString().split(' ')[0]}] ${msg}`;
+        logDiv.appendChild(entry);
+        logDiv.scrollTop = logDiv.scrollHeight;
+    }
+
+    function updateUI() {
+        const dbEl = document.getElementById('db-balance');
+        dbEl.innerText = `£${dbBalance}`;
+        document.getElementById('s-local').innerText = sLocal !== null ? `£${sLocal}` : '£---';
+        document.getElementById('c-local').innerText = cLocal !== null ? `£${cLocal}` : '£---';
+    }
+
+    // Process A Logic
+    function salaryRead() {
+        sLocal = dbBalance;
+        log(`A: Fetched £${sLocal} from DB. Transaction isolated in memory.`);
+        document.getElementById('s-read').disabled = true;
+        document.getElementById('s-input').disabled = true;
+        document.getElementById('s-calc').disabled = false;
+        updateUI();
+    }
+
+    function salaryCalc() {
+        amountA = parseInt(document.getElementById('s-input').value);
+        sLocal += amountA;
+        log(`A: Calculated result £${sLocal} (local only). DB is still £${dbBalance}.`, 'success');
+        document.getElementById('s-calc').disabled = true;
+        document.getElementById('s-write').disabled = false;
+        updateUI();
+    }
+
+    function salaryWrite() {
+        dbBalance = sLocal;
+        log(`A: COMITTING TO DB. Overwriting everything with £${dbBalance}!`, 'err');
+        document.getElementById('s-write').disabled = true;
+        checkStatus();
+        updateUI();
+    }
+
+    // Process B Logic
+    function cashRead() {
+        cLocal = dbBalance;
+        log(`B: Fetched £${cLocal} from DB. Awaiting user action.`);
+        document.getElementById('c-read').disabled = true;
+        document.getElementById('c-input').disabled = true;
+        document.getElementById('c-write').disabled = false;
+        updateUI();
+    }
+
+    function cashWrite() {
+        amountB = parseInt(document.getElementById('c-input').value);
+        dbBalance = cLocal + amountB;
+        log(`B: DB updated to £${dbBalance}. (Process A still has old data!)`, 'success');
+        document.getElementById('c-write').disabled = true;
+        updateUI();
+    }
+
+    function checkStatus() {
+        const expected = initialBalance + amountA + amountB;
+        if (dbBalance !== expected) {
+            const dbEl = document.getElementById('db-balance');
+            dbEl.classList.add('glitch');
+            log(`ANOMALY DETECTED: Lost Update.`, 'err');
+            log(`The DB should be £${expected}. You lost £${expected - dbBalance}.`, 'err');
+        } else {
+            log(`Success: Data integrity maintained (Unlikely in this race sequence!).`, 'success');
+        }
+    }
+</script>
+
+</body>
+</html>
