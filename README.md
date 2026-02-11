@@ -7,6 +7,7 @@ Concurrency control is a mechanism in a database management system that allows s
 # License
 Feel free to use this simulation in your teaching and learning. If you use it, please acknowledge this page and inlcude a link to [https://hazratali.github.io/lostupdatesimulation/](https://hazratali.github.io/lostupdatesimulation/) 
 
+# Disclaimer
 This interative app is built only demonstration and education purpose to elaborate the concept of Database Integrity.
 No warranties or liabilities accepted.
 
